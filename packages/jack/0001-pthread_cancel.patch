@@ -11,17 +11,14 @@ index 531d73a..c2cb16d 100644
 -
         free (h);
  }
-@@ -215,7 +218,10 @@ hammerfall_monitor_controls (void *arg)
- 	snd_ctl_elem_id_t *switch_id[3];
- 	snd_ctl_elem_value_t *sw[3];
+@@ -215,7 +212,6 @@ hammerfall_monitor_controls (void *arg)
+        snd_ctl_elem_id_t *switch_id[3];
+        snd_ctl_elem_value_t *sw[3];
  
-+// not patched properly because thread is never created
-+#ifndef __ANDROID__
- 	pthread_setcanceltype (PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-+#endif
+-       pthread_setcanceltype (PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
  
- 	snd_ctl_elem_id_malloc (&switch_id[0]);
- 	snd_ctl_elem_id_malloc (&switch_id[1]);
+        snd_ctl_elem_id_malloc (&switch_id[0]);
+        snd_ctl_elem_id_malloc (&switch_id[1]);
 diff --git a/drivers/freebob/freebob_driver.c b/drivers/freebob/freebob_driver.c
 index d26e6dd..8f09a48 100644
 --- a/drivers/freebob/freebob_driver.c
