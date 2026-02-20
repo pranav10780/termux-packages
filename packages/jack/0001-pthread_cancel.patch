@@ -1,18 +1,16 @@
 diff --git a/drivers/alsa/hammerfall.c b/drivers/alsa/hammerfall.c
-index 531d73a..91eaf17 100644
+index 531d73a..c2cb16d 100644
 --- a/drivers/alsa/hammerfall.c
 +++ b/drivers/alsa/hammerfall.c
-@@ -200,7 +200,10 @@ hammerfall_release (jack_hardware_t *hw)
- 		return;
- 	}
+@@ -200,9 +200,6 @@ hammerfall_release (jack_hardware_t *hw)
+                return;
+        }
  
-+// not patched properly because thread is never created
-+#ifndef __ANDROID__
- 	pthread_cancel (h->monitor_thread);
-+#endif
- 	pthread_join (h->monitor_thread, &status);
- 
- 	free (h);
+-       pthread_cancel (h->monitor_thread);
+-       pthread_join (h->monitor_thread, &status);
+-
+        free (h);
+ }
 @@ -215,7 +218,10 @@ hammerfall_monitor_controls (void *arg)
  	snd_ctl_elem_id_t *switch_id[3];
  	snd_ctl_elem_value_t *sw[3];
