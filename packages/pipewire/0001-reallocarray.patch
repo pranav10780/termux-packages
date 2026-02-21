@@ -1,0 +1,80 @@
+# Use reallocarray from BSD, its available in bionic with __ANDROID_API__ >= 29.
+
+--- meson.build.orig	2022-05-24 11:10:00.415154895 +0530
++++ ./src/pipewire/meson.build	2022-05-24 11:10:28.705154884 +0530
+@@ -47,6 +47,7 @@
+ ]
+
+ pipewire_sources = [
++  '../reallocarray.c',
+   'buffers.c',
+   'impl-core.c',
+   'impl-client.c',
+
+--- meson.build.orig	2022-05-24 12:11:59.965153476 +0530
++++ ./src/modules/meson.build	2022-05-24 12:13:02.385153453 +0530
+@@ -326,7 +326,8 @@
+ )
+
+ pipewire_module_client_node = shared_library('pipewire-module-client-node',
+-  [ 'module-client-node.c',
++  [ '../reallocarray.c',
++    'module-client-node.c',
+     'module-client-node/remote-node.c',
+     'module-client-node/client-node.c',
+     'module-client-node/protocol-native.c',
+@@ -395,7 +396,8 @@
+ )
+
+ pipewire_module_session_manager = shared_library('pipewire-module-session-manager',
+-  [ 'module-session-manager.c',
++  [ '../reallocarray.c',
++    'module-session-manager.c',
+     'module-session-manager/client-endpoint/client-endpoint.c',
+     'module-session-manager/client-endpoint/endpoint-stream.c',
+     'module-session-manager/client-endpoint/endpoint.c',
+diff --git a/src/reallocarray.c b/src/reallocarray.c
+new file mode 100644
+index 000000000..5d1df14e9
+--- /dev/null
++++ b/src/reallocarray.c
+@@ -0,0 +1,39 @@
++/*     $OpenBSD: reallocarray.c,v 1.2 2014/12/08 03:45:00 bcook Exp $  */
++/*
++ * Copyright (c) 2008 Otto Moerbeek <otto@drijf.net>
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++#include <sys/cdefs.h>
++
++#include <errno.h>
++#include <stdint.h>
++#include <stdlib.h>
++#include <sys/types.h>
++
++/*
++ * This is sqrt(SIZE_MAX+1), as s1*s2 <= SIZE_MAX
++ * if both s1 < MUL_NO_OVERFLOW and s2 < MUL_NO_OVERFLOW
++ */
++#define MUL_NO_OVERFLOW ((size_t)1 << (sizeof(size_t) * 4))
++
++void *reallocarray(void *optr, size_t nmemb, size_t size) {
++
++  if ((nmemb >= MUL_NO_OVERFLOW || size >= MUL_NO_OVERFLOW) && nmemb > 0 &&
++      SIZE_MAX / nmemb < size) {
++    errno = ENOMEM;
++    return (NULL);
++  }
++  return (realloc(optr, size * nmemb));
++}

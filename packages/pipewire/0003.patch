@@ -1,0 +1,285 @@
+diff --git a/meson.build b/meson.build
+index 5f9ffa39d..cb4c02784 100644
+--- a/meson.build
++++ b/meson.build
+@@ -482,6 +482,11 @@ else
+         cdata.set('HAVE_WEBRTC2', webrtc_dep.found())
+         summary({'WebRTC Echo Canceling > 2.0': webrtc_dep.found()}, bool_yn: true, section: 'Misc dependencies')
+       endif
++
++      liboboe_dep = (host_machine.system() == 'android'
++          ? cc.find_library('oboe', required : true)
++          : dependency('', required: false))
++
+     endif
+   endif
+ endif
+diff --git a/pipewire-alsa/alsa-plugins/pcm_pipewire.c b/pipewire-alsa/alsa-plugins/pcm_pipewire.c
+index 24a66eabc..2debfc8de 100644
+--- a/pipewire-alsa/alsa-plugins/pcm_pipewire.c
++++ b/pipewire-alsa/alsa-plugins/pcm_pipewire.c
+@@ -1230,7 +1230,7 @@ static const struct pw_core_events core_events = {
+ };
+ 
+ 
+-static ssize_t log_write(void *cookie, const char *buf, size_t size)
++static int log_write(void *cookie, const char *buf, int size)
+ {
+ 	int len;
+ 
+@@ -1244,10 +1244,6 @@ static ssize_t log_write(void *cookie, const char *buf, size_t size)
+ 	return size;
+ }
+ 
+-static cookie_io_functions_t io_funcs = {
+-	.write = log_write,
+-};
+-
+ static int execute_match(void *data, const char *location, const char *action,
+                 const char *val, size_t len)
+ {
+@@ -1273,7 +1269,7 @@ static int snd_pcm_pipewire_open(snd_pcm_t **pcmp,
+ 	pw->props = props;
+ 	pw->fd = -1;
+ 	pw->io.poll_fd = -1;
+-	pw->log_file = fopencookie(pw, "w", io_funcs);
++	pw->log_file = fwopen(pw, log_write);
+ 	if (pw->log_file == NULL) {
+ 		pw_log_error("can't create log file: %m");
+ 		err = -errno;
+diff --git a/pipewire-jack/src/pipewire-jack.c b/pipewire-jack/src/pipewire-jack.c
+index 73627a67e..feacef143 100644
+--- a/pipewire-jack/src/pipewire-jack.c
++++ b/pipewire-jack/src/pipewire-jack.c
+@@ -7576,6 +7576,11 @@ int jack_drop_real_time_scheduling (jack_native_thread_t thread)
+ 	return spa_thread_utils_drop_rt(globals.thread_utils, t);
+ }
+ 
++static void thread_signal_handler(int signum)
++{
++	pthread_exit(0);
++}
++
+ /**
+  * Create a thread for JACK or one of its clients.  The thread is
+  * created executing @a start_routine with @a arg as its sole
+@@ -7604,6 +7609,13 @@ int jack_client_create_thread (jack_client_t* client,
+ 	int res = 0;
+ 	struct spa_thread *thr;
+ 
++	struct sigaction actions;
++	memset(&actions, 0, sizeof(actions));
++	sigemptyset(&actions.sa_mask);
++	actions.sa_flags = 0;
++	actions.sa_handler = thread_signal_handler;
++	sigaction(SIGUSR2, &actions, NULL);
++
+ 	return_val_if_fail(client != NULL, -EINVAL);
+ 	return_val_if_fail(thread != NULL, -EINVAL);
+ 	return_val_if_fail(start_routine != NULL, -EINVAL);
+@@ -7654,8 +7666,14 @@ int jack_client_kill_thread(jack_client_t* client, jack_native_thread_t thread)
+ 
+ 	return_val_if_fail(client != NULL, -EINVAL);
+ 
++#ifndef __ANDROID__
+ 	pw_log_debug("cancel thread %p", (void *) thread);
+ 	pthread_cancel(thread);
++#else
++	// corresponding patches are done on the client side code (libjack) to accept SIGUSR2
++	pw_log_debug("kill thread %p with SIGUSR2 (android)", (void *) thread);
++	pthread_kill(thread, SIGUSR2);
++#endif
+ 	pw_log_debug("join thread %p", (void *) thread);
+ 	spa_thread_utils_join(&c->context.thread_utils, (struct spa_thread*)thread, &status);
+ 	pw_log_debug("stopped thread %p", (void *) thread);
+diff --git a/spa/plugins/alsa/alsa-pcm.c b/spa/plugins/alsa/alsa-pcm.c
+index ca31366dc..4c61a3439 100644
+--- a/spa/plugins/alsa/alsa-pcm.c
++++ b/spa/plugins/alsa/alsa-pcm.c
+@@ -711,7 +711,7 @@ int spa_alsa_parse_prop_params(struct state *state, struct spa_pod *params)
+ }
+ 
+ 
+-static ssize_t log_write(void *cookie, const char *buf, size_t size)
++static int log_write(void *cookie, const char *buf, int size)
+ {
+ 	struct state *state = cookie;
+ 	int len;
+@@ -726,10 +726,6 @@ static ssize_t log_write(void *cookie, const char *buf, size_t size)
+ 	return size;
+ }
+ 
+-static cookie_io_functions_t io_funcs = {
+-	.write = log_write,
+-};
+-
+ static void silence_error_handler(const char *file, int line,
+ 		const char *function, int err, const char *fmt, ...)
+ {
+@@ -1047,7 +1043,7 @@ int spa_alsa_init(struct state *state, const struct spa_dict *info)
+ 
+ 	state->card = ensure_card(state->card_index, state->open_ucm, state->is_split_parent);
+ 
+-	state->log_file = fopencookie(state, "w", io_funcs);
++	state->log_file = fwopen(state, log_write);
+ 	if (state->log_file == NULL) {
+ 		spa_log_error(state->log, "can't create log file");
+ 		return -errno;
+diff --git a/src/daemon/pipewire-pulse.conf.in b/src/daemon/pipewire-pulse.conf.in
+index 8c21e37df..3acba5f35 100644
+--- a/src/daemon/pipewire-pulse.conf.in
++++ b/src/daemon/pipewire-pulse.conf.in
+@@ -97,7 +97,7 @@ pulse.properties = {
+     server.address = [
+         "unix:native"
+         #"unix:/tmp/something"              # absolute paths may be used
+-        #"tcp:4713"                         # IPv4 and IPv6 on all addresses
++        "tcp:4713"                         # IPv4 and IPv6 on all addresses
+         #"tcp:[::]:9999"                    # IPv6 on all addresses
+         #"tcp:127.0.0.1:8888"               # IPv4 on a single address
+         #
+diff --git a/src/daemon/pipewire.conf.in b/src/daemon/pipewire.conf.in
+index a9142cede..f8b5aec8e 100644
+--- a/src/daemon/pipewire.conf.in
++++ b/src/daemon/pipewire.conf.in
+@@ -255,6 +255,18 @@ context.modules = [
+         flags = [ ifexists nofail ]
+         condition = [ { module.jackdbus-detect = !false } ]
+     }
++
++    # Oboe sink and source
++    { name = libpipewire-module-oboe-sink
++        args = {
++            stream.write.timeout = 5000
++        }
++    }
++    { name = libpipewire-module-oboe-source
++        args = {
++            stream.read.timeout = 0
++        }
++    }
+ ]
+ 
+ context.objects = [
+diff --git a/src/modules/meson.build b/src/modules/meson.build
+index 8636286e6..9692eddf9 100644
+--- a/src/modules/meson.build
++++ b/src/modules/meson.build
+@@ -3,6 +3,8 @@ subdir('module-rt')
+ # The list of "main" source files for modules, the ones that have the
+ # doxygen documentation
+ module_sources = [
++  'module-oboe-sink.cpp',
++  'module-oboe-source.cpp',
+   'module-access.c',
+   'module-adapter.c',
+   'module-avb.c',
+@@ -53,6 +55,25 @@ module_sources = [
+   'module-x11-bell.c',
+ ]
+ 
++if liboboe_dep.found()
++  pipewire_module_oboe_sink = shared_library('pipewire-module-oboe-sink',
++    [ 'module-oboe-sink.cpp' ],
++    include_directories : [configinc],
++    install : true,
++    install_dir : modules_install_dir,
++    install_rpath: modules_install_dir,
++    dependencies : [spa_dep, mathlib, dl_lib, pipewire_dep, liboboe_dep],
++  )
++  pipewire_module_oboe_source = shared_library('pipewire-module-oboe-source',
++    [ 'module-oboe-source.cpp' ],
++    include_directories : [configinc],
++    install : true,
++    install_dir : modules_install_dir,
++    install_rpath: modules_install_dir,
++    dependencies : [spa_dep, mathlib, dl_lib, pipewire_dep, liboboe_dep],
++  )
++endif
++
+ pipewire_module_access_deps = [spa_dep, mathlib, dl_lib, pipewire_dep]
+ if flatpak_support
+   pipewire_module_access_deps += glib2_dep
+@@ -321,6 +342,8 @@ pipewire_module_protocol_pulse_sources = [
+   'module-protocol-pulse/stream.c',
+   'module-protocol-pulse/utils.c',
+   'module-protocol-pulse/volume.c',
++  'module-protocol-pulse/modules/module-oboe-sink.c',
++  'module-protocol-pulse/modules/module-oboe-source.c',
+   'module-protocol-pulse/modules/module-alsa-sink.c',
+   'module-protocol-pulse/modules/module-alsa-source.c',
+   'module-protocol-pulse/modules/module-always-sink.c',
+diff --git a/src/modules/module-protocol-native.c b/src/modules/module-protocol-native.c
+index 2be92a847..1b191d5c1 100644
+--- a/src/modules/module-protocol-native.c
++++ b/src/modules/module-protocol-native.c
+@@ -713,16 +713,49 @@ exit:
+ 	return NULL;
+ }
+ 
++char *pa_machine_id(void) {
++    FILE *f;
++    char *h;
++    if ((f = fopen("@TERMUX_PREFIX@/etc/machine-id", "re")) ||
++        (f = fopen("@TERMUX_PREFIX@/var/lib/dbus/machine-id", "re"))) {
++        char *ln = calloc(1, 34), *r;
++
++        r = fgets(ln, 34-1, f);
++        fclose(f);
++
++        pw_strip(ln, "\n");
++
++        if (r && ln[0])
++            return ln;
++		free(ln);
++    }
++    return NULL;
++}
++
+ static const char *
+ get_runtime_dir(void)
+ {
+ 	const char *runtime_dir;
++	char *mid;
+ 
+ 	runtime_dir = getenv("PIPEWIRE_RUNTIME_DIR");
+ 	if (runtime_dir == NULL)
+ 		runtime_dir = getenv("XDG_RUNTIME_DIR");
+ 	if (runtime_dir == NULL)
+ 		runtime_dir = getenv("USERPROFILE");
++	if (runtime_dir == NULL) {
++		runtime_dir = "@TERMUX_PREFIX@/tmp";
++		// compatible with pulseaudio fallback path when XDG_RUNTIME_DIR is not set
++		mid = pa_machine_id();
++		if (mid) {
++			char fallback_dir[256];
++			snprintf(fallback_dir, sizeof(fallback_dir), "%s/.config/pulse/%s-runtime", getenv("HOME"), mid);
++			free(mid);
++			unlink(fallback_dir);
++			symlink("@TERMUX_PREFIX@/tmp/pulse", fallback_dir);
++		}
++
++	}
+ 	return runtime_dir;
+ }
+ 
+
+@@ -723,6 +723,19 @@ get_runtime_dir(void)
+                runtime_dir = getenv("XDG_RUNTIME_DIR");
+        if (runtime_dir == NULL)
+                runtime_dir = getenv("USERPROFILE");
++	if (runtime_dir == NULL) {
++		runtime_dir = "@TERMUX_PREFIX@/tmp";
++               // compatible with pulseaudio fallback path when XDG_RUNTIME_DIR is not set
++               mid = pa_machine_id();
++               if (mid) {
++                       char fallback_dir[256];
++                       snprintf(fallback_dir, sizeof(fallback_dir), "%s/.config/pulse/%s-runtime", getenv("HOME"), mid);
++                       free(mid);
++                       unlink(fallback_dir);
++                       symlink("@TERMUX_PREFIX@/tmp/pulse", fallback_dir);
++               }
++
++	}
+        return runtime_dir;
+ }
