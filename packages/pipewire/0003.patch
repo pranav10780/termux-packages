@@ -1,19 +1,18 @@
 diff --git a/meson.build b/meson.build
-index 5f9ffa39d..cb4c02784 100644
+index 5f9ffa39d..db52dd553 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -482,6 +482,11 @@ else
-         cdata.set('HAVE_WEBRTC2', webrtc_dep.found())
-         summary({'WebRTC Echo Canceling > 2.0': webrtc_dep.found()}, bool_yn: true, section: 'Misc dependencies')
-       endif
-+
-+      liboboe_dep = (host_machine.system() == 'android'
-+          ? cc.find_library('oboe', required : true)
-+          : dependency('', required: false))
-+
-     endif
+@@ -486,6 +486,10 @@ else
    endif
  endif
+
++liboboe_dep = (host_machine.system() == 'android'
++    ? cc.find_library('oboe', required : true)
++    : dependency('', required: false))
++
+ # On FreeBSD and MidnightBSD, epoll-shim library is required for eventfd() and timerfd()
+ epoll_shim_dep = (host_machine.system() == 'freebsd' or host_machine.system() == 'midnightbsd'
+     ? dependency('epoll-shim', required: true)
 diff --git a/pipewire-alsa/alsa-plugins/pcm_pipewire.c b/pipewire-alsa/alsa-plugins/pcm_pipewire.c
 index 24a66eabc..2debfc8de 100644
 --- a/pipewire-alsa/alsa-plugins/pcm_pipewire.c

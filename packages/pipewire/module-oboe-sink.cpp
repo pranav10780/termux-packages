@@ -184,7 +184,7 @@ static void playback_stream_process(void *d)
 
         spa_zero(data);
 	    data = SPA_PTROFF(bd->data, offs, void);
-        
+
 		// TODO: investigate timeout
         if ((returnCode = impl->oboe_stream->write(data, size / impl->frame_size, impl->stream_write_timeout)) != oboe::Result::OK)
             pw_log_error("Oboe stream write() error: %s", oboe::convertToText(returnCode));
@@ -226,7 +226,7 @@ static int open_oboe_stream(struct impl *impl)
     switch (impl->info.format) {
         case SPA_AUDIO_FORMAT_S16_LE: format = oboe::AudioFormat::I16; break;
         case SPA_AUDIO_FORMAT_F32_LE: format = oboe::AudioFormat::Float; break;
-        default: 
+        default:
             pw_log_error( "audio format not supported. ");
             goto fail;
     }
@@ -390,8 +390,8 @@ static void parse_audio_info(const struct pw_properties *props, struct spa_audio
 		str = DEFAULT_FORMAT;
 	info->format = static_cast<spa_audio_format>(format_from_name(str, strlen(str)));
 	switch (info->format) {
-		case SPA_AUDIO_FORMAT_S16_LE: 
-		case SPA_AUDIO_FORMAT_F32_LE: 
+		case SPA_AUDIO_FORMAT_S16_LE:
+		case SPA_AUDIO_FORMAT_F32_LE:
 			break;
 		default:
             pw_log_error( "audio format not supported. fallback to SPA_AUDIO_FORMAT_S16_LE. ");
@@ -525,7 +525,7 @@ int pipewire__module_init(struct pw_impl_module *module, const char *args)
 
 	impl->frame_size = calc_frame_size(&impl->info);
 	impl->stream_write_timeout = pw_properties_get_uint64(props, "stream.write.timeout", DEFAULT_STREAM_WRITE_TIMEOUT);
-	pw_log_info( "stream write timeout set to %d", impl->stream_write_timeout);
+	pw_log_info( "stream write timeout set to %" PRId64, impl->stream_write_timeout);
 	if (impl->frame_size == 0) {
 		res = -EINVAL;
 		pw_log_error( "can't parse audio format");
