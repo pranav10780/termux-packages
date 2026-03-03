@@ -59,8 +59,8 @@ termux_step_pre_configure() {
 termux_step_post_make_install() {
 	mkdir -p "$TERMUX_PREFIX/etc/pipewire/pipewire-pulse.conf.d"
 	mkdir -p "$TERMUX_PREFIX/etc/alsa/conf.d"
-	ln -st "$TERMUX_PREFIX/etc/alsa/conf.d" $TERMUX_PREFIX/share/alsa/alsa.conf.d/99-pipewire-default.conf
-	ln -st "$TERMUX_PREFIX/etc/alsa/conf.d" $TERMUX_PREFIX/share/alsa/alsa.conf.d/50-pipewire.conf
+	ln -sft "$TERMUX_PREFIX/etc/alsa/conf.d" $TERMUX_PREFIX/share/alsa/alsa.conf.d/99-pipewire-default.conf
+	ln -sft "$TERMUX_PREFIX/etc/alsa/conf.d" $TERMUX_PREFIX/share/alsa/alsa.conf.d/50-pipewire.conf
 	for file in "$PREFIX"/lib/pipewire*/jack/*; do
 		ln -sft "$PREFIX/lib" "$file"
 	done
